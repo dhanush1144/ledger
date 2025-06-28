@@ -41,55 +41,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchOrCreateProfile = async (user: User): Promise<Profile | null> => {
+  const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
-      console.log('Fetching profile for user:', user.id);
-      
-      // First, try to fetch existing profile
-      const { data: existingProfile, error: fetchError } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
-        .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no rows
+        .eq('id', userId)
+        .maybeSingle();
 
-      if (fetchError) {
-        console.error('Error fetching profile:', fetchError);
+      if (error) {
+        console.error('Error fetching profile:', error);
         return null;
       }
 
-      if (existingProfile) {
-        console.log('Found existing profile:', existingProfile);
+      if (data) {
         // Ensure proper type casting for the role field
         const profile: Profile = {
-          id: existingProfile.id,
-          email: existingProfile.email,
-          full_name: existingProfile.full_name,
-          role: (existingProfile.role === 'admin' ? 'admin' : 'user') as 'admin' | 'user',
-          user_type: existingProfile.user_type,
-          company_id: existingProfile.company_id,
-          company_name: existingProfile.company_name,
-          gst_number: existingProfile.gst_number,
-          created_at: existingProfile.created_at,
-          updated_at: existingProfile.updated_at
+          id: data.id,
+          email: data.email,
+          full_name: data.full_name,
+          role: (data.role === 'admin' ? 'admin' : 'user') as 'admin' | 'user',
+          user_type: data.user_type,
+          company_id: data.company_id,
+          company_name: data.company_name,
+          gst_number: data.gst_number,
+          created_at: data.created_at,
+          updated_at: data.updated_at
         };
         return profile;
       }
 
-      // No profile exists, create one
-      console.log('No profile found, creating new profile for user:', user.id);
-      
-      // Extract data from user metadata or use defaults
-      const userMetadata = user.user_metadata || {};
-      const fullName = userMetadata.full_name || userMetadata.name || user.email?.split('@')[0] || 'User';
-      const userType = userMetadata.user_type || 'individual';
-      const companyName = userMetadata.company_name || null;
-      const gstNumber = userMetadata.gst_number || null;
+      return null;
+    } catch (error) {
+      console.error('Error in fetchProfile:', error);
+      return null;
+    }
+  };
 
+  const createProfile = async (user: User, name: string, userType: string, companyName?: string, gstNumber?: string): Promise<Profile | null> => {
+    try {
       let companyId = null;
       
-      // Create company if user is organization type and has company name
+      // Create company if user is organization type
       if (userType === 'organization' && companyName) {
-        console.log('Creating company for organization user:', companyName);
         const { data: company, error: companyError } = await supabase
           .from('companies')
           .insert({
@@ -104,50 +98,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('Error creating company:', companyError);
         } else {
           companyId = company.id;
-          console.log('Created company with ID:', companyId);
         }
       }
 
-      // Create the profile
-      const { data: newProfile, error: createError } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .insert({
           id: user.id,
           email: user.email || '',
-          full_name: fullName,
+          full_name: name,
           user_type: userType as 'individual' | 'organization' | 'accountant',
           company_id: companyId,
-          company_name: companyName,
-          gst_number: gstNumber,
-          role: 'user' // Default role
+          company_name: companyName || null,
+          gst_number: gstNumber || null
         })
         .select()
         .single();
 
-      if (createError) {
-        console.error('Error creating profile:', createError);
+      if (error) {
+        console.error('Error creating profile:', error);
         return null;
       }
 
-      console.log('Created new profile:', newProfile);
-
-      // Return the properly typed profile
+      // Ensure proper type casting for the returned profile
       const profile: Profile = {
-        id: newProfile.id,
-        email: newProfile.email,
-        full_name: newProfile.full_name,
-        role: (newProfile.role === 'admin' ? 'admin' : 'user') as 'admin' | 'user',
-        user_type: newProfile.user_type,
-        company_id: newProfile.company_id,
-        company_name: newProfile.company_name,
-        gst_number: newProfile.gst_number,
-        created_at: newProfile.created_at,
-        updated_at: newProfile.updated_at
+        id: data.id,
+        email: data.email,
+        full_name: data.full_name,
+        role: (data.role === 'admin' ? 'admin' : 'user') as 'admin' | 'user',
+        user_type: data.user_type,
+        company_id: data.company_id,
+        company_name: data.company_name,
+        gst_number: data.gst_number,
+        created_at: data.created_at,
+        updated_at: data.updated_at
       };
       return profile;
-
     } catch (error) {
-      console.error('Error in fetchOrCreateProfile:', error);
+      console.error('Error in createProfile:', error);
       return null;
     }
   };
@@ -165,11 +153,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Fetch or create profile for the authenticated user
-          const profileData = await fetchOrCreateProfile(session.user);
-          if (mounted && profileData) {
-            setProfile(profileData);
-          }
+          setTimeout(async () => {
+            const profileData = await fetchProfile(session.user.id);
+            if (mounted && profileData) {
+              setProfile(profileData);
+            }
+          }, 0);
         } else {
           setProfile(null);
         }
@@ -194,7 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          const profileData = await fetchOrCreateProfile(session.user);
+          const profileData = await fetchProfile(session.user.id);
           if (mounted && profileData) {
             setProfile(profileData);
           }
@@ -229,7 +218,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       console.log('Login successful:', data.user?.email);
-      // Profile will be fetched/created automatically by the auth state change listener
+      await new Promise(resolve => setTimeout(resolve, 100));
       
     } catch (error: any) {
       console.error('Login failed:', error);
@@ -263,9 +252,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw error;
       }
       
-      console.log('Registration successful:', data.user?.email);
-      // Profile will be created automatically by the auth state change listener
+      if (data.user) {
+        await createProfile(data.user, name, userType, companyName, gstNumber);
+      }
       
+      console.log('Registration successful:', data.user?.email);
     } catch (error: any) {
       console.error('Registration failed:', error);
       throw error;
