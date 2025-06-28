@@ -3,7 +3,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { Upload, FileText, Loader2 } from 'lucide-react';
+import { Upload, FileText, Loader2, AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface StatementUploadProps {
   onDataExtracted: (data: any) => void;
@@ -15,6 +16,7 @@ export const StatementUpload: React.FC<StatementUploadProps> = ({ onDataExtracte
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [processingStep, setProcessingStep] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (file: File) => {
@@ -75,6 +77,7 @@ export const StatementUpload: React.FC<StatementUploadProps> = ({ onDataExtracte
     if (!selectedFile || !user) return;
 
     setProcessing(true);
+    setProcessingStep('Uploading file...');
 
     try {
       // Upload file to Supabase storage
@@ -90,9 +93,12 @@ export const StatementUpload: React.FC<StatementUploadProps> = ({ onDataExtracte
       }
 
       setUploading(false);
+      setProcessingStep('Converting file for AI processing...');
 
       // Convert file to base64 for Gemini processing
       const imageBase64 = await convertFileToBase64(selectedFile);
+
+      setProcessingStep('Analyzing bank statement with AI...');
 
       // Call the AI processing function
       const { data: aiResult, error: aiError } = await supabase.functions.invoke('process-bank-statement-ai', {
@@ -103,15 +109,34 @@ export const StatementUpload: React.FC<StatementUploadProps> = ({ onDataExtracte
       });
 
       if (aiError) {
-        throw aiError;
+        console.error('Supabase function error:', aiError);
+        throw new Error(`AI processing failed: ${aiError.message}`);
       }
 
+      console.log('AI processing result:', aiResult);
+
       if (aiResult.success && aiResult.extractedData) {
+        setProcessingStep('Processing complete!');
+        
+        // Validate that we have real data, not sample data
+        const hasRealData = aiResult.extractedData.transactions && 
+                           aiResult.extractedData.transactions.length > 0 &&
+                           !aiResult.extractedData.transactions[0].description?.includes('SAMPLE');
+
+        if (!hasRealData) {
+          toast({
+            title: 'AI Processing Notice',
+            description: 'The AI could not extract clear transaction data from the image. Please ensure the bank statement is clear and readable, or try a different image.',
+            variant: 'destructive',
+          });
+        } else {
+          toast({
+            title: 'Bank statement processed successfully',
+            description: `AI extracted ${aiResult.extractedData.transactions.length} transactions. Please review and save.`,
+          });
+        }
+        
         onDataExtracted(aiResult.extractedData);
-        toast({
-          title: 'Bank statement processed successfully',
-          description: 'AI has extracted transaction data. Please review and save.',
-        });
         
         // Clear the selected file
         setSelectedFile(null);
@@ -126,12 +151,13 @@ export const StatementUpload: React.FC<StatementUploadProps> = ({ onDataExtracte
       console.error('Error processing bank statement:', error);
       toast({
         title: 'Error processing bank statement',
-        description: error.message || 'Failed to process the uploaded bank statement',
+        description: error.message || 'Failed to process the uploaded bank statement. Please try again with a clearer image.',
         variant: 'destructive',
       });
     } finally {
       setUploading(false);
       setProcessing(false);
+      setProcessingStep('');
     }
   };
 
@@ -170,18 +196,44 @@ export const StatementUpload: React.FC<StatementUploadProps> = ({ onDataExtracte
         </Button>
       </div>
 
+      {/* Processing Status */}
+      {(uploading || processing) && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span>{processingStep}</span>
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ 
+                width: uploading ? '30%' : processing ? '80%' : '100%' 
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Process Button */}
-      {selectedFile && (
+      {selectedFile && !processing && !uploading && (
         <Button
           onClick={processWithAI}
           disabled={uploading || processing}
           className="w-full"
         >
-          {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {processing && !uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {uploading ? 'Uploading...' : processing ? 'Processing with AI...' : 'Process with AI'}
+          <Upload className="mr-2 h-4 w-4" />
+          Process with AI
         </Button>
       )}
+
+      {/* AI Processing Info */}
+      <Alert>
+        <AlertTriangle className="h-4 w-4" />
+        <AlertDescription>
+          <strong>AI Processing Tips:</strong> For best results, ensure your bank statement image is clear, well-lit, 
+          and all text is readable. The AI will extract transaction details, dates, amounts, and automatically categorize expenses.
+        </AlertDescription>
+      </Alert>
     </div>
   );
 };

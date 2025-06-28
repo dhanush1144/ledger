@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/components/ui/use-toast';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Brain } from 'lucide-react';
 import { StatementUpload } from '@/components/bank/StatementUpload';
 import { ExtractedTransactionData } from '@/components/bank/ExtractedTransactionData';
 import { createBankTransactionLedgerEntries } from '@/utils/ledgerUtils';
@@ -75,6 +75,26 @@ export const BankStatementUpload = () => {
 
   const handleDataExtracted = (data: ExtractedStatementData) => {
     console.log('Extracted statement data received:', data);
+    
+    // Check if this is real extracted data or sample data
+    const isRealData = data.transactions && 
+                      data.transactions.length > 0 && 
+                      !data.transactions[0].description?.includes('SAMPLE') &&
+                      data.accountNumber !== 'SAMPLE1234';
+
+    if (isRealData) {
+      toast({
+        title: 'Real data extracted successfully!',
+        description: `AI successfully extracted ${data.transactions.length} real transactions from your bank statement.`,
+      });
+    } else {
+      toast({
+        title: 'Sample data provided',
+        description: 'AI could not extract clear data from the image. Sample data is shown for demonstration.',
+        variant: 'destructive',
+      });
+    }
+    
     setExtractedData(data);
   };
 
@@ -88,12 +108,18 @@ export const BankStatementUpload = () => {
     setSaving(true);
 
     try {
+      // Check if this is real data
+      const isRealData = extractedData.transactions && 
+                        extractedData.transactions.length > 0 && 
+                        !extractedData.transactions[0].description?.includes('SAMPLE') &&
+                        extractedData.accountNumber !== 'SAMPLE1234';
+
       // Create bank statement record
       const { data: statement, error: statementError } = await supabase
         .from('bank_statements')
         .insert({
           user_id: user.id,
-          file_name: `AI_Processed_Statement_${Date.now()}.pdf`,
+          file_name: isRealData ? `AI_Extracted_Statement_${Date.now()}.pdf` : `Sample_Statement_${Date.now()}.pdf`,
           file_path: `statements/${user.id}/ai_processed_${Date.now()}.pdf`,
           processed: true,
           processed_at: new Date().toISOString()
@@ -132,7 +158,7 @@ export const BankStatementUpload = () => {
       }
 
       toast({
-        title: 'Bank statement processed successfully',
+        title: isRealData ? 'Real bank statement processed successfully!' : 'Sample data saved successfully',
         description: `${extractedData.transactions.length} transactions have been saved and ledger entries created.`,
       });
 
@@ -167,8 +193,8 @@ export const BankStatementUpload = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Upload Bank Statement</h1>
-        <p className="text-gray-600">Upload your bank statement to automatically extract and categorize transactions with AI</p>
+        <h1 className="text-3xl font-bold text-gray-900">AI-Powered Bank Statement Upload</h1>
+        <p className="text-gray-600">Upload your bank statement to automatically extract and categorize real transactions with Google Gemini AI</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -176,11 +202,11 @@ export const BankStatementUpload = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Upload Bank Statement
+              <Brain className="h-5 w-5 text-blue-600" />
+              AI Bank Statement Processing
             </CardTitle>
             <CardDescription>
-              Upload an image or PDF of your bank statement for AI processing
+              Upload an image or PDF of your bank statement for intelligent AI processing with Google Gemini
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -193,16 +219,18 @@ export const BankStatementUpload = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Uploaded Statements
+              Processed Statements
             </CardTitle>
             <CardDescription>
-              View your previously uploaded bank statements
+              View your AI-processed bank statements and their status
             </CardDescription>
           </CardHeader>
           <CardContent>
             {statements.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No statements uploaded yet. Upload your first bank statement to get started.
+                <Brain className="mx-auto h-12 w-12 text-gray-300 mb-4" />
+                <p>No statements processed yet.</p>
+                <p className="text-sm">Upload your first bank statement to see AI in action!</p>
               </div>
             ) : (
               <div className="space-y-4 max-h-64 overflow-y-auto">
@@ -224,7 +252,7 @@ export const BankStatementUpload = () => {
                       {statement.processed ? (
                         <div className="flex items-center space-x-1 text-green-600">
                           <CheckCircle className="h-3 w-3" />
-                          <span className="text-xs">Processed</span>
+                          <span className="text-xs">AI Processed</span>
                         </div>
                       ) : (
                         <div className="flex items-center space-x-1 text-yellow-600">
@@ -241,12 +269,13 @@ export const BankStatementUpload = () => {
         </Card>
       </div>
 
-      {/* AI Processing Alert */}
+      {/* AI Processing Information */}
       <Alert>
-        <AlertCircle className="h-4 w-4" />
+        <Brain className="h-4 w-4" />
         <AlertDescription>
-          <strong>AI-Powered Processing:</strong> Our system uses Google Gemini AI to automatically extract transaction details, 
-          categorize expenses, and create detailed ledger entries. Review the extracted data before saving to ensure accuracy.
+          <strong>Google Gemini AI Integration:</strong> Our system uses Google's advanced Gemini AI to automatically extract 
+          real transaction details from your bank statement images. The AI reads dates, amounts, descriptions, and intelligently 
+          categorizes each transaction for accurate ledger management.
         </AlertDescription>
       </Alert>
 
@@ -273,7 +302,10 @@ export const BankStatementUpload = () => {
                 Saving Transactions...
               </>
             ) : (
-              `Save ${extractedData.transactions.length} Transactions`
+              <>
+                <Brain className="mr-2 h-4 w-4" />
+                Save {extractedData.transactions.length} AI-Extracted Transactions
+              </>
             )}
           </Button>
         </div>
