@@ -20,7 +20,7 @@ interface UploadedStatement {
   processed_at: string | null;
 }
 
-export const UploadStatement = () => {
+export const BankStatementUpload = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
